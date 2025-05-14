@@ -1,35 +1,27 @@
 ---
-- name: Provision VM with Minikube and deploy services
-  hosts: minikube_vms
+- name: Provision VM with K3s and deploy services
+  hosts: k3s_nodes
   become: yes
 
   tasks:
-    - name: Update APT
-      apt:
-        update_cache: yes
-
     - name: Install dependencies
       apt:
         name:
           - curl
-          - apt-transport-https
-          - ca-certificates
-          - conntrack
-          - socat
-          - docker.io
         state: present
+        update_cache: yes
 
-    - name: Install Minikube
+    - name: Install K3s
       shell: |
-        curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
-        install minikube-linux-amd64 /usr/local/bin/minikube
+        curl -sfL https://get.k3s.io | sh -
       args:
-        creates: /usr/local/bin/minikube
+        creates: /usr/local/bin/k3s
 
-    - name: Start Minikube
-      shell: minikube start --driver=none
+    - name: Wait for K3s to be ready
+      shell: |
+        until kubectl get nodes; do sleep 2; done
       environment:
-        CHANGE_MINIKUBE_NONE_USER: "true"
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
 
     - name: Copy Kubernetes manifests
       copy:
@@ -37,21 +29,14 @@
         dest: /home/{{ ansible_user }}/services/
         mode: 0755
 
-    - name: Build custom Flask Docker image
-      docker_image:
-        name: flask-custom
-        path: ../app
-        tag: latest
-        state: present
-
     - name: Deploy hello-app
       shell: |
         kubectl apply -f /home/{{ ansible_user }}/services/hello-app
       environment:
-        KUBECONFIG: /etc/kubernetes/admin.conf
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
 
-    - name: Deploy flask-app
+    - name: Deploy portainer
       shell: |
-        kubectl apply -f /home/{{ ansible_user }}/services/flask-app
+        kubectl apply -f /home/{{ ansible_user }}/services/portainer
       environment:
-        KUBECONFIG: /etc/kubernetes/admin.conf
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
